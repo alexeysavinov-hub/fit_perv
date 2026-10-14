@@ -6,8 +6,8 @@
  */
 
 $CONFIG = [
-    'to'        => 'yunalifevarshavka1@mail.ru', // куда приходят заявки
-    'smtp_user' => 'yunalifevarshavka1@mail.ru', // ящик, с которого уходят письма
+    'to'        => 'yuna.life@mail.ru', // куда приходят заявки
+    'smtp_user' => 'yuna.life@mail.ru', // ящик, с которого уходят письма
     'smtp_pass' => '',                           // пароль для внешнего приложения Mail.ru (не основной пароль от ящика)
     'smtp_host' => 'smtp.mail.ru',
     'smtp_port' => 465,
@@ -33,9 +33,21 @@ function field($in, $key)
     return isset($in[$key]) && is_scalar($in[$key]) ? trim((string) $in[$key]) : '';
 }
 
+// Длинная тема режется на куски по RFC 2047, чтобы её правильно показывал любой почтовик
 function mime($s)
 {
-    return '=?UTF-8?B?' . base64_encode($s) . '?=';
+    $parts = preg_split('//u', $s, -1, PREG_SPLIT_NO_EMPTY);
+    $out = [];
+    $buf = '';
+    foreach ($parts ?: [$s] as $ch) {
+        if ($buf !== '' && strlen($buf . $ch) > 45) {
+            $out[] = '=?UTF-8?B?' . base64_encode($buf) . '?=';
+            $buf = '';
+        }
+        $buf .= $ch;
+    }
+    $out[] = '=?UTF-8?B?' . base64_encode($buf) . '?=';
+    return implode("\r\n ", $out);
 }
 
 // Не больше 3 заявок с одного IP за 10 минут и 40 заявок в час всего
@@ -153,13 +165,17 @@ if (!rate_ok($_SERVER['REMOTE_ADDR'] ?? '')) {
 $phone = sprintf('+7 (%s) %s-%s-%s', substr($digits, 1, 3), substr($digits, 4, 3), substr($digits, 7, 2), substr($digits, 9, 2));
 $when = date('d.m.Y H:i');
 $page = substr((string) preg_replace('/[\x00-\x1F\x7F]/', '', $_SERVER['HTTP_REFERER'] ?? ''), 0, 300);
-$subject = 'Заявка на гостевой визит: ' . $name . ', ' . $phone;
+$offer = trim((string) preg_replace('/\s+/u', ' ', (string) preg_replace('/[\x00-\x1F\x7F<>]/u', ' ', field($in, 'offer'))));
+if (!preg_match('/^.{2,80}$/u', $offer)) {
+    $offer = 'Первый гостевой визит бесплатно';
+}
+$subject = 'Заявка «' . $offer . '»: ' . $name . ', ' . $phone;
 $lines = [
     'Новая заявка с сайта ЮНА Фитнес Первомайская',
     '',
     'Имя: ' . $name,
     'Телефон: ' . $phone,
-    'Заявка: гостевой визит',
+    'Заявка: ' . $offer,
     'Время: ' . $when . ' (МСК)',
     'Согласие на обработку персональных данных: отмечено в форме',
 ];
